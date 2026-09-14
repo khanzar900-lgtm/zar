@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="Interactive 3D digital twin of a 1 t/day green hydrogen plant — live SCADA view, AI predictive layer and real-weather mode.">
+<title>Green H₂ Plant — Digital Twin</title>
+<link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<div id="header">
+  <h1>Green Hydrogen Plant — Digital Twin</h1>
+  <p id="clock">Live supervisory view · SCADA + AI optimization layer</p>
+</div>
+
+<div id="btns">
+  <button class="b on" id="bRot" onclick="T.toggleRot()">⟳ Rotate</button>
+  <button class="b" id="bPid" onclick="T.togglePID()">P&ID Mode</button>
+  <button class="b on" id="bSensor" onclick="T.toggleSensors()">Sensors</button>
+  <button class="b on" id="bFlow" onclick="T.toggleFlow()">Flow</button>
+  <button class="b on" id="bSLD" onclick="T.toggleSLD()">⚡ Single-Line</button>
+
+  <!-- Weather dropdown -->
+  <div class="dd" id="ddWx">
+    <button class="b" id="bWx" onclick="T.dd('ddWx')">⛅ Weather</button>
+    <div class="dd-menu">
+      <div class="dd-head">Weather mode</div>
+      <div class="dd-item active" data-wx="sunny" onclick="T.setWeather('sunny')"><span class="di-dot" style="background:#fbbf24"></span>☀ Sunny</div>
+      <div class="dd-item" data-wx="cloudy" onclick="T.setWeather('cloudy')"><span class="di-dot" style="background:#94a3b8"></span>⛅ Cloudy</div>
+      <div class="dd-item" data-wx="rainy" onclick="T.setWeather('rainy')"><span class="di-dot" style="background:#38bdf8"></span>🌧 Rainy</div>
+      <div class="dd-item" data-wx="storm" onclick="T.setWeather('storm')"><span class="di-dot" style="background:#a855f7"></span>🌩 Storm</div>
+    </div>
+  </div>
+
+  <!-- Leak simulation dropdown -->
+  <div class="dd" id="ddLeak">
+    <button class="b leak" id="bLeak" onclick="T.dd('ddLeak')">⚠ Leak Sim</button>
+    <div class="dd-menu">
+      <div class="dd-head">Simulate leak at</div>
+      <div class="dd-item" data-leak="electrolyzer" onclick="T.setLeak('electrolyzer')"><span class="di-dot" style="background:#3b82f6"></span>Electrolyzer (H₂)</div>
+      <div class="dd-item" data-leak="separator" onclick="T.setLeak('separator')"><span class="di-dot" style="background:#3b82f6"></span>H₂ Separator</div>
+      <div class="dd-item" data-leak="dryer" onclick="T.setLeak('dryer')"><span class="di-dot" style="background:#3b82f6"></span>PSA Dryer (H₂)</div>
+      <div class="dd-item" data-leak="compressor" onclick="T.setLeak('compressor')"><span class="di-dot" style="background:#3b82f6"></span>H₂ Compressor</div>
+      <div class="dd-item" data-leak="h2storage" onclick="T.setLeak('h2storage')"><span class="di-dot" style="background:#3b82f6"></span>H₂ Storage</div>
+      <div class="dd-item" data-leak="o2storage" onclick="T.setLeak('o2storage')"><span class="di-dot" style="background:#e2e8f0"></span>O₂ Storage</div>
+      <div class="dd-item" data-leak="cooling" onclick="T.setLeak('cooling')"><span class="di-dot" style="background:#4ade80"></span>Cooling Water</div>
+      <div class="dd-sep"></div>
+      <div class="dd-item" data-leak="none" onclick="T.setLeak('none')"><span class="di-dot" style="background:#64748b"></span>✓ Clear / No leak</div>
+    </div>
+  </div>
+
+  <button class="b" id="bNight" onclick="T.toggleNight()">🌙 Night</button>
+  <button class="b" onclick="T.setView('top')">Top</button>
+  <button class="b" onclick="T.setView('iso')">Iso</button>
+  <button class="b" id="bPFD" onclick="T.openView('pfd')">📊 PFD + Balance</button>
+  <button class="b" id="bHIW" onclick="T.openView('hiw')">🎬 How it Works</button>
+  <button class="b" id="bAIX" onclick="T.openView('aiexp')">🧠 AI Explained</button>
+  <button class="b live" id="bLive" onclick="T.toggleLive()">🛰 Live Mode</button>
+  <div class="dd" id="ddLoc">
+    <button class="b" id="bLoc" onclick="T.dd('ddLoc')">📍 Location</button>
+    <div class="dd-menu">
+      <div class="dd-head">Set plant location</div>
+      <div class="dd-item" onclick="T.useMyLocation()"><span class="di-dot" style="background:#22c55e"></span>🛰 Use my GPS location</div>
+      <div class="dd-item" onclick="T.detectByIP()"><span class="di-dot" style="background:#38bdf8"></span>🌐 Detect by network (IP)</div>
+      <div class="dd-item" onclick="T.enterCity()"><span class="di-dot" style="background:#a855f7"></span>⌨ Enter city name…</div>
+    </div>
+  </div>
+</div>
+
+<div id="pidBadge">◉ P&ID SCHEMATIC MODE</div>
+<div id="wxBanner"><span class="wb-dot"></span><span id="wxBannerTxt">STORM WARNING — unstable renewable generation</span></div>
+<div id="lightning"></div>
+<div id="liveBadge"></div>
+
+<!-- KPI PANEL -->
+<div id="kpi">
+  <h3>Plant KPIs</h3>
+  <div class="kpi-item">
+    <div class="kpi-val" style="color:#3b82f6" id="k-h2">0</div>
+    <div class="kpi-lbl">kg H₂ / day</div>
+    <div class="kpi-sub" id="k-h2rate">— kg/h current</div>
+  </div>
+  <div class="kpi-item">
+    <div class="kpi-val" style="color:#22c55e" id="k-eff">0%</div>
+    <div class="kpi-lbl">System efficiency</div>
+    <div class="kpi-sub" id="k-sec">— kWh/kg</div>
+  </div>
+  <div class="kpi-item">
+    <div class="kpi-val" style="color:#10b981" id="k-co2">0</div>
+    <div class="kpi-lbl">kg CO₂ avoided / day</div>
+    <div class="kpi-sub">vs. grey H₂ (SMR)</div>
+  </div>
+  <div class="kpi-item">
+    <div class="kpi-val" style="color:#f8fafc" id="k-o2">0</div>
+    <div class="kpi-lbl">kg O₂ / day (byproduct)</div>
+  </div>
+</div>
+
+<!-- ENERGY FLOW -->
+<div id="energy">
+  <h3>Energy Flow</h3>
+  <div class="erow"><span>☀ Solar</span><span id="e-solar">0 kW</span></div>
+  <div class="ebar"><div class="efill" id="ef-solar" style="background:#facc15;width:0"></div></div>
+  <div class="erow"><span>🌬 Wind</span><span id="e-wind">0 kW</span></div>
+  <div class="ebar"><div class="efill" id="ef-wind" style="background:#38bdf8;width:0"></div></div>
+  <div class="erow"><span>🔋 Battery <span id="b-stat" class="bstat idle">IDLE</span></span><span id="e-bess">0 kW</span></div>
+  <div class="ebar"><div class="efill" id="ef-bess" style="background:#a78bfa;width:0"></div></div>
+  <div class="erow" style="font-size:8px;color:#64748b;margin-top:-3px"><span>State of charge</span><span id="b-soc">62%</span></div>
+  <div class="erow"><span>⚡ Electrolyzer</span><span id="e-load">0 kW</span></div>
+  <div class="ebar"><div class="efill" id="ef-load" style="background:#3b82f6;width:0"></div></div>
+  <div class="erow" style="margin-top:5px;padding-top:5px;border-top:1px solid #1e293b">
+    <span>Renewable use</span><span id="e-renew" style="color:#22c55e">0%</span></div>
+</div>
+
+<!-- ENERGY BALANCE PANEL -->
+<div id="ebal">
+  <h3>Energy Balance <span class="wx-ico" id="eb-wx">☀</span></h3>
+  <div class="eb-row"><span class="lbl"><span class="eb-dot" style="background:#facc15"></span>Solar</span><span class="val" id="eb-solar" style="color:#facc15">0 kW</span></div>
+  <div class="eb-row"><span class="lbl"><span class="eb-dot" style="background:#38bdf8"></span>Wind</span><span class="val" id="eb-wind" style="color:#38bdf8">0 kW</span></div>
+  <div class="eb-row"><span class="lbl"><span class="eb-dot" style="background:#a78bfa"></span>Battery</span><span class="val" id="eb-bess" style="color:#a78bfa">0 kW</span></div>
+  <div class="eb-row"><span class="lbl"><span class="eb-dot" style="background:#64748b"></span>Grid</span><span class="val" id="eb-grid" style="color:#94a3b8">0 kW</span></div>
+  <div class="eb-row eb-total"><span class="lbl"><span class="eb-dot" style="background:#3b82f6"></span>Electrolyzer</span><span class="val" id="eb-load" style="color:#60a5fa">0 kW</span></div>
+  <div class="eb-row"><span class="lbl"><span class="eb-dot" style="background:#f97316"></span>Auxiliary</span><span class="val" id="eb-aux" style="color:#fdba74">330 kW</span></div>
+  <div class="eb-row eb-total"><span class="lbl">Renewable %</span><span class="val" id="eb-renew" style="color:#22c55e">0%</span></div>
+</div>
+
+<!-- AI DECISION LOG -->
+<div id="ailog">
+  <h3>AI Decision Log</h3>
+  <div id="log-list"></div>
+</div>
+
+<!-- SINGLE-LINE ELECTRICAL DIAGRAM (toggleable overlay) -->
+<div id="sld" style="position:fixed;right:230px;top:56px;z-index:19;width:150px;
+  background:#0f172ad9;border:1px solid #1e293b;border-radius:10px;padding:10px;backdrop-filter:blur(10px)">
+  <h3 style="font-size:9px;color:#facc15;text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px">⚡ Single-Line</h3>
+  <svg id="sldSvg" width="130" height="330" viewBox="0 0 130 330"></svg>
+</div>
+
+<!-- LIVE SENSOR DASHBOARD -->
+<div id="dash">
+  <h3>Live Instrumentation</h3>
+  <div id="gauges"></div>
+</div>
+
+<!-- AI PREDICTION DASHBOARD -->
+<div id="ai">
+  <h3>AI Predictive Engine</h3>
+  <div id="rul-list"></div>
+</div>
+
+<!-- MAINTENANCE ALERTS -->
+<div id="maint">
+  <h3>⚙ Maintenance Alerts</h3>
+  <div id="maint-list"></div>
+</div>
+
+<!-- ALARM BANNER -->
+<div id="alarms"></div>
+
+<!-- TOOLTIP -->
+<div id="tip">Hover equipment for details · Toggle P&ID mode for schematic view</div>
+
+<!-- ===== PFD + MASS/ENERGY BALANCE OVERLAY ===== -->
+<div class="overlay" id="pfd">
+  <div class="ov-head">
+    <div>
+      <h2>Process Flow Diagram &amp; Mass / Energy Balance</h2>
+      <p>1 tonne/day green hydrogen plant · basis 41.67 kg H₂/h · steady-state at full load</p>
+    </div>
+    <button class="ov-close" onclick="T.closeView()">✕ Close</button>
+  </div>
+  <div class="ov-body">
+    <div class="pfd-wrap">
+      <div class="eqn">2 H₂O &nbsp;→&nbsp; 2 H₂ &nbsp;+&nbsp; O₂
+        <small>Water electrolysis — driven by renewable DC electricity across the PEM stack</small></div>
+
+      <div class="legend-row">
+        <span><i style="background:#22d3ee"></i>Water</span>
+        <span><i style="background:#3b82f6"></i>Hydrogen</span>
+        <span><i style="background:#e2e8f0"></i>Oxygen</span>
+        <span><i style="background:#f97316"></i>Heat recovery</span>
+        <span><i style="background:#facc15"></i>Electricity</span>
+      </div>
+
+      <div class="pfd-svg-box">
+        <svg id="pfdSvg" viewBox="0 0 1120 460" width="100%"></svg>
+      </div>
+
+      <div class="balance-grid">
+        <div class="bal-card">
+          <h3>Mass Balance (per hour, full load)</h3>
+          <table class="bal">
+            <thead><tr><th>Stream</th><th>Component</th><th class="num">Value</th></tr></thead>
+            <tbody>
+              <tr><td>Raw water in</td><td>H₂O (feed to RO)</td><td class="num">521 L/h</td></tr>
+              <tr><td>RO reject</td><td>Brine to drain</td><td class="num">104 L/h</td></tr>
+              <tr><td>DM water to stack</td><td>H₂O (≈10 L/kg H₂)</td><td class="num">417 L/h</td></tr>
+              <tr><td>Consumed (reaction)</td><td>H₂O split</td><td class="num">372 L/h</td></tr>
+              <tr class="total"><td>H₂ product</td><td>99.999% H₂</td><td class="num">41.67 kg/h</td></tr>
+              <tr><td>&nbsp;</td><td>= volumetric</td><td class="num">464 Nm³/h</td></tr>
+              <tr><td>&nbsp;</td><td>= daily</td><td class="num">1000 kg/day</td></tr>
+              <tr class="total"><td>O₂ byproduct</td><td>&gt;99.5% O₂</td><td class="num">331 kg/h</td></tr>
+              <tr><td>&nbsp;</td><td>= volumetric</td><td class="num">231 Nm³/h</td></tr>
+              <tr><td>&nbsp;</td><td>= daily</td><td class="num">7,937 kg/day</td></tr>
+            </tbody>
+          </table>
+          <div class="note-box" style="margin-top:12px">Stoichiometry: each kg of H₂ needs 8.94 kg of water and releases 7.94 kg of oxygen. Extra feed water (≈10 vs 8.94 L/kg) covers membrane humidification and purge losses.</div>
+        </div>
+
+        <div class="bal-card energy">
+          <h3>Energy Balance (electrical, full load)</h3>
+          <table class="bal">
+            <thead><tr><th>Consumer</th><th class="num">Power</th><th class="num">Share</th></tr></thead>
+            <tbody>
+              <tr><td>PEM electrolyzer stack</td><td class="num">2,167 kW</td><td class="num">86.8%</td></tr>
+              <tr><td>H₂ compressor</td><td class="num">180 kW</td><td class="num">7.2%</td></tr>
+              <tr><td>Cooling pumps + tower</td><td class="num">60 kW</td><td class="num">2.4%</td></tr>
+              <tr><td>O₂ compressor</td><td class="num">40 kW</td><td class="num">1.6%</td></tr>
+              <tr><td>Water treatment</td><td class="num">30 kW</td><td class="num">1.2%</td></tr>
+              <tr><td>Controls, air, lighting</td><td class="num">20 kW</td><td class="num">0.8%</td></tr>
+              <tr class="total"><td>Total plant demand</td><td class="num">2,497 kW</td><td class="num">100%</td></tr>
+              <tr><td>Daily energy</td><td class="num" colspan="2">60 MWh/day</td></tr>
+              <tr><td>System specific energy</td><td class="num" colspan="2">60 kWh/kg H₂</td></tr>
+              <tr><td>Stack efficiency (HHV)</td><td class="num" colspan="2">76%</td></tr>
+              <tr class="total"><td>System efficiency (HHV)</td><td class="num" colspan="2">66%</td></tr>
+            </tbody>
+          </table>
+          <div class="note-box" style="margin-top:12px;border-left-color:#facc15">Of 2,167 kW into the stack, 1,642 kW becomes hydrogen chemical energy (HHV) and <b>525 kW leaves as waste heat</b> — the recoverable stream that feeds the heat-recovery loop.</div>
+        </div>
+      </div>
+
+      <div class="bal-card energy" style="margin-bottom:18px">
+        <h3 style="color:#f97316">Waste Heat Recovery</h3>
+        <table class="bal">
+          <thead><tr><th>Source / sink</th><th>Temperature</th><th class="num">Duty</th></tr></thead>
+          <tbody>
+            <tr><td>Electrolyzer coolant (available)</td><td>65 °C</td><td class="num">525 kW</td></tr>
+            <tr><td>Compressor intercoolers (available)</td><td>up to 120 °C</td><td class="num">~130 kW</td></tr>
+            <tr class="total"><td>Total waste heat available</td><td>—</td><td class="num">~655 kW</td></tr>
+            <tr><td>Recovered to feed-water preheat</td><td>15 → 50 °C</td><td class="num">200–300 kW</td></tr>
+            <tr><td>Efficiency gain from preheating</td><td>—</td><td class="num">+2–3%</td></tr>
+          </tbody>
+        </table>
+        <div class="note-box" style="margin-top:12px;border-left-color:#f97316">Plate heat exchanger HX-01 transfers heat from the hot electrolyzer coolant into the incoming demineralized water, so the stack spends less of its own energy warming the feed — commercially proven (TRL 9).</div>
+      </div>
+
+      <div class="bal-card" style="margin-bottom:8px">
+        <h3 style="color:#22c55e">Environmental Balance</h3>
+        <table class="bal">
+          <tbody>
+            <tr><td>Operational CO₂ emissions</td><td class="num">0 kg CO₂ / kg H₂</td></tr>
+            <tr><td>CO₂ avoided vs grey H₂ (SMR)</td><td class="num">~10 kg CO₂ / kg H₂</td></tr>
+            <tr class="total"><td>CO₂ avoided (plant total)</td><td class="num">10 t/day · 3,650 t/year</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== HOW IT WORKS — 2D ANIMATION OVERLAY ===== -->
+<div class="overlay" id="hiw">
+  <div class="ov-head">
+    <div>
+      <h2>How the Plant Works — Step by Step</h2>
+      <p>Animated 2D walkthrough of the full green hydrogen process</p>
+    </div>
+    <button class="ov-close" onclick="T.closeView()">✕ Close</button>
+  </div>
+  <div class="ov-body">
+    <div class="hiw-wrap">
+      <div class="hiw-stage">
+        <svg id="hiwSvg" viewBox="0 0 1080 520" width="100%" height="100%" preserveAspectRatio="xMidYMid meet"></svg>
+        <div class="hiw-caption">
+          <h4><span class="step-num" id="hiwNum">1</span><span id="hiwTitle">Renewable Power Generation</span></h4>
+          <p id="hiwText">…</p>
+          <div class="tech" id="hiwTech">…</div>
+        </div>
+      </div>
+      <div class="hiw-controls">
+        <button class="hiw-btn" id="hiwPrev" onclick="HIW.prev()">‹ Prev</button>
+        <button class="hiw-btn play" id="hiwPlay" onclick="HIW.toggle()">▶ Play</button>
+        <button class="hiw-btn" id="hiwNext" onclick="HIW.next()">Next ›</button>
+        <span class="hiw-step-label" id="hiwStepLabel">Step 1 / 10</span>
+        <div class="hiw-progress"><div class="hiw-progress-fill" id="hiwProg"></div></div>
+        <div class="hiw-dots" id="hiwDots"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== AI EXPLAINED — sensor-to-prediction pipeline ===== -->
+<div class="overlay" id="aiexp">
+  <div class="ov-head">
+    <div>
+      <h2>How AI &amp; Sensors Work Together</h2>
+      <p>The mechanism behind every alert, RUL estimate and fault probability shown in this twin</p>
+    </div>
+    <button class="ov-close" onclick="T.closeView()">✕ Close</button>
+  </div>
+  <div class="ov-body">
+    <div class="aix-wrap">
+
+      <div class="aix-top">
+        <!-- LIVE CHART -->
+        <div class="aix-card">
+          <h3><span class="aix-live-dot"></span>Live Sensor Trend — Anomaly Detection</h3>
+          <div class="aix-sensor-select" id="aixSelect"></div>
+          <div class="aix-chartbox"><svg id="aixChart" viewBox="0 0 560 200" width="100%"></svg></div>
+          <div class="aix-readout">
+            <div class="aix-stat"><div class="v" id="aixVal" style="color:#38bdf8">–</div><div class="l">current reading</div></div>
+            <div class="aix-stat"><div class="v" id="aixScore" style="color:#a855f7">–</div><div class="l">anomaly score</div></div>
+            <div class="aix-stat"><div class="v" id="aixRul" style="color:#4ade80">–</div><div class="l">remaining useful life</div></div>
+            <div class="aix-stat"><div class="v" id="aixFault" style="color:#f59e0b">–</div><div class="l">fault probability</div></div>
+          </div>
+        </div>
+
+        <!-- HOW RUL IS COMPUTED -->
+        <div class="aix-card">
+          <h3>⚙ How the Numbers Are Computed</h3>
+          <p style="font-size:11px;color:#94a3b8;line-height:1.6">
+            The AI never sees a raw threshold like a normal PLC alarm. It compares every
+            new reading against a <b style="color:#e2e8f0">learned baseline</b> — what this
+            sensor normally reads at the current load / temperature / speed — and scores
+            how far the new reading deviates from that expected pattern.
+          </p>
+          <div class="aix-formula">
+            <b>1. Anomaly score</b> (Isolation Forest concept)<br>
+            deviation = |reading − baseline(load)| ÷ normal spread<br>
+            → higher deviation across recent samples = higher anomaly score
+          </div>
+          <div class="aix-formula">
+            <b>2. Remaining Useful Life</b> (Weibull survival model)<br>
+            RUL(t) = RUL(t−1) + trend_rate × Δt<br>
+            → the AI fits a slow degradation trend across days, not one bad reading
+          </div>
+          <div class="aix-formula">
+            <b>3. Decision rule</b><br>
+            fault probability &gt; 25% → maintenance advisory<br>
+            RUL &lt; 60 days → work order auto-generated<br>
+            safety limit crossed → SIS trips independently (never the AI)
+          </div>
+        </div>
+      </div>
+
+      <!-- SENSOR → AI PIPELINE -->
+      <div class="aix-pipeline">
+        <h3 style="font-size:12px;color:#38bdf8;text-transform:uppercase;letter-spacing:.05em;margin-bottom:10px">Data Pipeline — From Field Sensor to Decision</h3>
+        <svg id="aixPipeSvg" class="aix-pipe-svg" viewBox="0 0 1080 150"></svg>
+        <div class="hiw-caption" style="position:static;margin-top:12px;backdrop-filter:none;background:#0b1220">
+          <h4><span class="step-num" id="aixNum">1</span><span id="aixTitle">Field Sensor</span></h4>
+          <p id="aixText">…</p>
+          <div class="tech" id="aixTech">…</div>
+        </div>
+        <div class="hiw-controls" style="padding-top:12px">
+          <button class="hiw-btn" onclick="AIX.prev()">‹ Prev</button>
+          <button class="hiw-btn play" id="aixPlay" onclick="AIX.toggle()">▶ Play</button>
+          <button class="hiw-btn" onclick="AIX.next()">Next ›</button>
+          <span class="hiw-step-label" id="aixStepLabel">Step 1 / 7</span>
+          <div class="hiw-progress"><div class="hiw-progress-fill" id="aixProg"></div></div>
+          <div class="hiw-dots" id="aixDots"></div>
+        </div>
+      </div>
+
+      <!-- 9 AI MODULES -->
+      <div class="aix-card" style="margin-bottom:8px">
+        <h3>🧩 The 9 AI Modules Running in This Twin</h3>
+        <div class="aix-modules" id="aixModules"></div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- three.js r128 served locally (vendor/three) so the twin runs fully offline -->
+<script src="vendor/three/three.min.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
